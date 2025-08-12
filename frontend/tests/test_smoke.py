@@ -2,7 +2,7 @@
 Smoke tests for the Streamlit application
 Tests basic functionality without UI rendering
 """
-import time
+
 from unittest.mock import patch
 
 import pytest
@@ -14,10 +14,10 @@ def test_app_smoke_test():
     """Basic smoke test to ensure app components work"""
     # Test that the terraform generation function works
     job_id = "smoke-test-123"
-    
-    with patch('time.sleep'):  # Speed up the test
+
+    with patch("time.sleep"):  # Speed up the test
         result = generate_terraform_variables(job_id)
-    
+
     # Basic validations
     assert result is not None
     assert len(result) > 0
@@ -31,36 +31,37 @@ def test_app_smoke_test():
 def test_terraform_syntax_validation():
     """Test that generated terraform has basic syntax elements"""
     job_id = "syntax-test"
-    
-    with patch('time.sleep'):
+
+    with patch("time.sleep"):
         result = generate_terraform_variables(job_id)
-    
+
     # Check for terraform syntax elements
-    lines = result.split('\n')
-    
+    lines = result.split("\n")
+
     # Count blocks
-    variable_count = sum(1 for line in lines if line.strip().startswith('variable '))
-    resource_count = sum(1 for line in lines if line.strip().startswith('resource '))
-    output_count = sum(1 for line in lines if line.strip().startswith('output '))
-    
+    variable_count = sum(1 for line in lines if line.strip().startswith("variable "))
+    resource_count = sum(1 for line in lines if line.strip().startswith("resource "))
+    output_count = sum(1 for line in lines if line.strip().startswith("output "))
+
     assert variable_count >= 4, f"Expected at least 4 variables, got {variable_count}"
     assert resource_count >= 2, f"Expected at least 2 resources, got {resource_count}"
     assert output_count >= 3, f"Expected at least 3 outputs, got {output_count}"
-    
+
     # Check for proper terraform structure
-    assert any('{' in line for line in lines), "Missing opening braces"
-    assert any('}' in line for line in lines), "Missing closing braces"
+    assert any("{" in line for line in lines), "Missing opening braces"
+    assert any("}" in line for line in lines), "Missing closing braces"
 
 
 def test_app_imports():
     """Test that all required modules can be imported"""
     try:
-        import streamlit as st
-        import pandas as pd
         import json
         import time
         import uuid
-        from typing import Dict, Any
+        from typing import Any, Dict
+
+        import pandas as pd
+        import streamlit as st
     except ImportError as e:
         pytest.fail(f"Failed to import required module: {e}")
 
