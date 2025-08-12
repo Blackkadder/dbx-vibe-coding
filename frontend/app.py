@@ -1,20 +1,20 @@
-import streamlit as st
-import pandas as pd
-import json
 import time
-from typing import Dict, Any
-import uuid
+from typing import Any, Dict
+
+import pandas as pd
+import streamlit as st
 
 # Configure the page
 st.set_page_config(
     page_title="I Hate Terraform",
     page_icon="😤",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
 # Custom CSS for a cool dark theme
-st.markdown("""
+st.markdown(
+    """
 <style>
     .main {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -169,21 +169,24 @@ st.markdown("""
         font-weight: bold;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # Initialize session state
-if 'terraform_output' not in st.session_state:
+if "terraform_output" not in st.session_state:
     st.session_state.terraform_output = ""
-if 'is_loading' not in st.session_state:
+if "is_loading" not in st.session_state:
     st.session_state.is_loading = False
-if 'job_completed' not in st.session_state:
+if "job_completed" not in st.session_state:
     st.session_state.job_completed = False
+
 
 def generate_terraform_variables(job_id: str) -> str:
     """Generate mock terraform variables based on job ID"""
     # Simulate some processing time
     time.sleep(2)
-    
+
     terraform_vars = f"""# Terraform Variables for Job: {job_id}
 # Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}
 
@@ -257,30 +260,34 @@ output "job_endpoint" {{
   description = "Job endpoint URL"
   value       = "https://api.example.com/jobs/${{var.job_id}}"
 }}"""
-    
+
     return terraform_vars
+
 
 def main():
     # Title
-    st.markdown("""
+    st.markdown(
+        """
     <div class="title-container">
         <h1 class="main-title">I hate terraform 😤</h1>
     </div>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     # Input container
     st.markdown('<div class="input-container">', unsafe_allow_html=True)
-    
+
     col1, col2 = st.columns([3, 1])
-    
+
     with col1:
         job_id = st.text_input(
             "",
             placeholder="Enter job ID...",
             key="job_id_input",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
-    
+
     with col2:
         if st.button("GO", key="go_button", use_container_width=True):
             if job_id.strip():
@@ -289,12 +296,13 @@ def main():
                 st.rerun()
             else:
                 st.error("Please enter a job ID!")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
     # Processing and output area
     if st.session_state.is_loading:
-        st.markdown("""
+        st.markdown(
+            """
         <div class="output-container">
             <div class="loading-spinner">
                 <div class="spinner"></div>
@@ -305,33 +313,43 @@ def main():
                 ⚡ Processing infrastructure as code...
             </div>
         </div>
-        """.format(st.session_state.job_id_input), unsafe_allow_html=True)
-        
+        """.format(
+                st.session_state.job_id_input
+            ),
+            unsafe_allow_html=True,
+        )
+
         # Generate terraform variables
         terraform_output = generate_terraform_variables(st.session_state.job_id_input)
         st.session_state.terraform_output = terraform_output
         st.session_state.is_loading = False
         st.session_state.job_completed = True
         st.rerun()
-    
+
     elif st.session_state.job_completed and st.session_state.terraform_output:
-        st.markdown("""
+        st.markdown(
+            """
         <div class="success-message">
             ✅ Terraform variables generated successfully! (Even though we hate it...)
         </div>
-        """, unsafe_allow_html=True)
-        
+        """,
+            unsafe_allow_html=True,
+        )
+
         st.markdown('<div class="output-container">', unsafe_allow_html=True)
-        
+
         # Display terraform output
-        st.markdown(f"""
+        st.markdown(
+            f"""
         <div class="terraform-output">
 {st.session_state.terraform_output}
         </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
+        """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
         # Download button
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -341,28 +359,35 @@ def main():
                 file_name=f"terraform_job_{st.session_state.job_id_input}.tf",
                 mime="text/plain",
                 key="download_button",
-                use_container_width=True
+                use_container_width=True,
             )
-    
+
     elif not st.session_state.terraform_output:
         # Default state
-        st.markdown("""
+        st.markdown(
+            """
         <div class="output-container">
             <div style="text-align: center; color: #666; font-size: 1.2rem; margin-top: 8rem;">
                 💻 Enter a job ID and click GO to generate terraform variables<br/><br/>
                 🤬 (Warning: May cause severe frustration with Infrastructure as Code)
             </div>
         </div>
-        """, unsafe_allow_html=True)
-    
+        """,
+            unsafe_allow_html=True,
+        )
+
     # Footer
-    st.markdown("""
+    st.markdown(
+        """
     <div style="text-align: center; margin-top: 3rem; padding: 2rem;">
         <p style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">
             Made with ❤️ and 😤 for people who understand the terraform struggle
         </p>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
 
 if __name__ == "__main__":
     main()
