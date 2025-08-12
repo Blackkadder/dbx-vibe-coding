@@ -351,6 +351,11 @@ class TerraformMiddleware:
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
+        # Logging configuration is the responsibility of the application.
+        
+        
+        
+        
         
         self.logger.info("Terraform middleware initialized")
         self.logger.debug(f"Workspace: {workspace_config.workspace_url}")
