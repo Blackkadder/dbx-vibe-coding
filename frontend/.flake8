@@ -1,0 +1,23 @@
+[flake8]
+max-line-length = 88
+select = E,W,F
+ignore = 
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # E501: line too long (black handles this)
+    E501
+per-file-ignores =
+    # Tests can have longer lines and more complex expressions
+    tests/*:E501,F401
+exclude =
+    .git,
+    __pycache__,
+    .pytest_cache,
+    .coverage,
+    htmlcov,
+    *.egg-info,
+    build,
+    dist
+max-complexity = 10
