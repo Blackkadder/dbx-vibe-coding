@@ -1,0 +1,12 @@
+[project]
+name = "dbx-vibe-coding"
+version = "0.1.0"
+description = "I hate terraform - Convert Databricks jobs to Terraform using AI"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "streamlit>=1.48.0",
+    "databricks-sdk>=0.18.0",
+    "requests>=2.31.0",
+    "pandas>=2.0.0",
+]
