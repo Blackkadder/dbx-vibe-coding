@@ -1,0 +1,18 @@
+bundle:
+  name: ihateterraform
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://your-dev-workspace.databricks.com
+  prod:
+    workspace:
+      host: https://your-prod-workspace.databricks.com
+
+resources:
+  apps:
+    ihateterraform_app:
+      name: 'ihateterraform'
+      description: 'I hate terraform - Streamlit app for generating terraform variables'
+      source_code_path: ./frontend
