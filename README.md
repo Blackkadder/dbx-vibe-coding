@@ -1,1 +1,1 @@
-# dbx-bite-coding
+# dbx-vibe-coding
