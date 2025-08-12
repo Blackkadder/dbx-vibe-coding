@@ -9,7 +9,6 @@ import os
 
 # Add the parent directory to the Python path to import from backend
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from backend.middleware import create_middleware_from_config
 from backend.config import ConfigManager, AppConfig, get_app_config
 
