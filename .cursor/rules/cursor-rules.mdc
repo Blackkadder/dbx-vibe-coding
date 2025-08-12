@@ -6,6 +6,11 @@ alwaysApply: true
 
 # Python Best Practices
 
+Folder structure
+- backend: contains databricks backend (model serving, llm agent)
+- frontend: this folder contains streamlit implementation of ihateterraform
+
+
 ## Code Style & Formatting
 
 ### Follow PEP 8 Standards
