@@ -5,6 +5,13 @@ import time
 import re
 from typing import Dict, Any
 import uuid
+import sys
+import os
+
+# Add the parent directory to the Python path to import from backend
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.middleware import create_middleware_from_config
+from backend.config import ConfigManager, AppConfig, get_app_config
 
 # Configure the page
 st.set_page_config(
@@ -143,13 +150,122 @@ if 'job_completed' not in st.session_state:
 if 'open_tf_tab_next' not in st.session_state:
     st.session_state.open_tf_tab_next = False
 
-def generate_terraform_variables(job_id: str) -> str:
-    """Generate mock terraform variables based on job ID"""
-    # Simulate some processing time
-    time.sleep(2)
+def generate_terraform_from_databricks(job_id: str, config: AppConfig) -> Dict[str, Any]:
+    """Generate terraform using the real middleware pipeline"""
+    try:
+        # Convert job_id to integer
+        job_id_int = int(job_id)
+        
+        # Create middleware
+        middleware = create_middleware_from_config(
+            workspace_url=config.workspace_url,
+            model_api_endpoint=config.model_api_endpoint,
+            workspace_profile=config.workspace_profile,
+            workspace_token=config.workspace_token,
+            model_api_key=config.model_api_key
+        )
+        
+        # Process job to terraform
+        result = middleware.process_job_to_terraform(job_id_int)
+        
+        return result
+        
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": f"Invalid job ID: {job_id}. Job ID must be a number.",
+            "job_id": job_id
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "job_id": job_id
+        }
+
+
+def generate_terraform_variables(job_id: str, config: AppConfig) -> str:
+    """Generate terraform using real Databricks job data and external AI model"""
     
-    terraform_vars = f"""# Terraform Variables for Job: {job_id}
+    # Add a processing indicator with real-time status updates
+    status_placeholder = st.empty()
+    status_placeholder.markdown("""
+        <div style="text-align: center; color: #00ff00; margin: 1rem 0;">
+            🔐 Authenticating to Databricks workspace...<br/>
+            <small>Establishing connection with SSO credentials</small>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    time.sleep(0.5)  # Brief pause for UX
+    
+    status_placeholder.markdown("""
+        <div style="text-align: center; color: #00ff00; margin: 1rem 0;">
+            📋 Retrieving job configuration from workspace...<br/>
+            <small>Fetching job details and cluster specifications</small>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Call the middleware - it will handle auth and job retrieval
+    result = generate_terraform_from_databricks(job_id, config)
+    
+    if result["success"]:
+        status_placeholder.markdown("""
+            <div style="text-align: center; color: #00ff00; margin: 1rem 0;">
+                🤖 Sending job data to AI model for conversion...<br/>
+                <small>External model processing Databricks job configuration</small>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        time.sleep(1)  # Brief pause for UX
+        status_placeholder.empty()
+        
+        return result["terraform_code"]
+    else:
+        status_placeholder.empty()
+        # Store error for display
+        st.session_state.error_message = result["error"]
+        raise Exception(result["error"])
+
+
+def show_configuration_help():
+    """Show configuration help in sidebar"""
+    with st.sidebar.expander("❓ Configuration Help"):
+        st.markdown("""
+        **To use this app, you need:**
+        
+        1. **Databricks Workspace URL**: Your workspace URL (e.g., `https://your-workspace.databricks.com`)
+        
+        2. **Authentication**: Either:
+           - Databricks CLI profile (recommended for SSO)
+           - Personal access token
+        
+        3. **Model API Endpoint**: URL of your deployed model that converts Databricks jobs to Terraform
+        
+        **Setting up authentication:**
+        - Install Databricks CLI: `pip install databricks-cli`
+        - Configure: `databricks configure --token`
+        - Or use environment variables
+        """)
+
+
+def show_demo_mode_warning():
+    """Show warning about demo mode"""
+    st.warning("""
+    ⚠️ **Demo Mode**: No valid configuration found. 
+    
+    Please configure your Databricks workspace and model API endpoint in the sidebar to use real job data.
+    Currently showing mock data for demonstration purposes.
+    """)
+
+
+def generate_mock_terraform(job_id: str) -> str:
+    """Generate mock terraform for demo purposes"""
+    time.sleep(2)  # Simulate processing
+    
+    return f"""# Mock Terraform Configuration for Job: {job_id}
 # Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}
+# 
+# ⚠️  This is DEMO data - configure the app to use real Databricks jobs
 
 variable "job_id" {{
   description = "The job identifier"
@@ -163,66 +279,34 @@ variable "environment" {{
   default     = "production"
 }}
 
-variable "region" {{
-  description = "AWS region"
-  type        = string
-  default     = "us-west-2"
-}}
-
-variable "instance_type" {{
-  description = "EC2 instance type"
-  type        = string
-  default     = "t3.medium"
-}}
-
-variable "tags" {{
-  description = "Resource tags"
-  type        = map(string)
-  default = {{
-    "JobId"       = "{job_id}"
-    "Environment" = "production"
-    "ManagedBy"   = "terraform"
-    "Project"     = "ihateterraform"
+# Mock Resource Configuration
+resource "databricks_job" "this" {{
+  name = "mock-job-{job_id}"
+  
+  task {{
+    task_key = "main"
+    
+    notebook_task {{
+      notebook_path = "/Users/demo@example.com/mock-notebook"
+    }}
+    
+    new_cluster {{
+      num_workers   = 2
+      spark_version = "11.3.x-scala2.12"
+      node_type_id  = "i3.xlarge"
+    }}
+  }}
+  
+  tags = {{
+    environment = var.environment
+    job_id      = var.job_id
   }}
 }}
 
-# Resource Configuration
-resource "aws_instance" "job_instance" {{
-  ami           = "ami-0c55b159cbfafe1d0"
-  instance_type = var.instance_type
-  
-  tags = merge(var.tags, {{
-    Name = "job-${{var.job_id}}-instance"
-  }})
-}}
-
-resource "aws_s3_bucket" "job_storage" {{
-  bucket = "job-${{var.job_id}}-storage-${{random_id.bucket_suffix.hex}}"
-  
-  tags = var.tags
-}}
-
-resource "random_id" "bucket_suffix" {{
-  byte_length = 4
-}}
-
-# Outputs
-output "instance_id" {{
-  description = "ID of the EC2 instance"
-  value       = aws_instance.job_instance.id
-}}
-
-output "bucket_name" {{
-  description = "Name of the S3 bucket"
-  value       = aws_s3_bucket.job_storage.id
-}}
-
-output "job_endpoint" {{
-  description = "Job endpoint URL"
-  value       = "https://api.example.com/jobs/${{var.job_id}}"
+output "job_url" {{
+  description = "Mock job URL"
+  value       = "https://demo.databricks.com/#job/${{databricks_job.this.id}}"
 }}"""
-    
-    return terraform_vars
 
 
 def is_valid_identifier(text: str) -> bool:
