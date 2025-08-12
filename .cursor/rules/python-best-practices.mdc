@@ -1,0 +1,199 @@
+---
+description: Python Best Practices and Code Standards
+globs: ["**/*.py", "**/pyproject.toml", "**/requirements.txt", "**/requirements-*.txt", "**/Pipfile", "**/poetry.lock", "**/uv.lock"]
+alwaysApply: true
+---
+
+# Python Best Practices
+
+## Code Style & Formatting
+
+### Follow PEP 8 Standards
+- Use 4 spaces for indentation (never tabs)
+- Limit lines to 88 characters (Black formatter standard)
+- Use snake_case for variables and functions
+- Use PascalCase for classes
+- Use UPPER_CASE for constants
+- Add blank lines: 2 before top-level functions/classes, 1 between methods
+
+### Imports
+- Group imports in this order: standard library, third-party, local imports
+- Use absolute imports when possible
+- Put each import on a separate line
+- Sort imports alphabetically within each group
+```python
+# Standard library
+import os
+import sys
+from pathlib import Path
+
+# Third-party
+import requests
+from fastapi import FastAPI
+
+# Local
+from .models import User
+from .utils import helper_function
+```
+
+## Code Quality
+
+### Type Hints
+- Always use type hints for function parameters and return values
+- Use `typing` module for complex types
+- Use `Optional[T]` or `T | None` (Python 3.10+) for optional parameters
+```python
+from typing import List, Dict, Optional, Union
+
+def process_data(items: List[str], config: Dict[str, Any]) -> Optional[str]:
+    pass
+```
+
+### Docstrings
+- Use docstrings for all public modules, functions, classes, and methods
+- Follow Google or NumPy docstring format
+```python
+def calculate_total(items: List[float], tax_rate: float = 0.1) -> float:
+    """Calculate total price including tax.
+    
+    Args:
+        items: List of item prices
+        tax_rate: Tax rate as decimal (default: 0.1 for 10%)
+        
+    Returns:
+        Total price including tax
+        
+    Raises:
+        ValueError: If tax_rate is negative
+    """
+    if tax_rate < 0:
+        raise ValueError("Tax rate cannot be negative")
+    return sum(items) * (1 + tax_rate)
+```
+
+### Error Handling
+- Use specific exception types, not bare `except:`
+- Prefer EAFP (Easier to Ask for Forgiveness than Permission) over LBYL
+- Use context managers for resource management
+```python
+# Good
+try:
+    with open(filename, 'r') as f:
+        data = f.read()
+except FileNotFoundError:
+    logger.error(f"File {filename} not found")
+    return None
+```
+
+## Development Tools & Dependencies
+
+### Prefer uv for Package Management
+- Use `uv` instead of pip when possible for faster installs
+- Create and maintain `requirements.txt` or `pyproject.toml`
+- Pin dependency versions in production
+- Use virtual environments for all projects
+
+### Project Structure
+```
+project/
+├── src/
+│   └── package_name/
+│       ├── __init__.py
+│       ├── main.py
+│       └── modules/
+├── tests/
+│   ├── __init__.py
+│   └── test_main.py
+├── docs/
+├── pyproject.toml
+├── requirements.txt
+└── README.md
+```
+
+### Testing
+- Write tests for all functions and classes
+- Use pytest as the testing framework
+- Aim for high test coverage (>80%)
+- Use descriptive test names
+```python
+def test_calculate_total_with_positive_tax_rate():
+    """Test that calculate_total correctly applies positive tax rate."""
+    result = calculate_total([10.0, 20.0], tax_rate=0.1)
+    assert result == 33.0
+```
+
+## Security & Performance
+
+### Security Best Practices
+- Never hardcode secrets (use environment variables)
+- Validate and sanitize all user inputs
+- Use secure random number generation for cryptographic purposes
+- Keep dependencies updated
+
+### Performance
+- Use list comprehensions and generator expressions when appropriate
+- Prefer `join()` over string concatenation in loops
+- Use `__slots__` for classes with many instances
+- Profile code before optimizing
+
+## Code Organization
+
+### Functions and Classes
+- Keep functions small and focused (single responsibility)
+- Use class methods and static methods appropriately
+- Prefer composition over inheritance
+- Use dataclasses for simple data containers
+```python
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class User:
+    name: str
+    email: str
+    age: Optional[int] = None
+```
+
+### Constants and Configuration
+- Define constants at module level
+- Use environment variables for configuration
+- Create configuration classes for complex settings
+```python
+import os
+from dataclasses import dataclass
+
+# Constants
+MAX_RETRY_ATTEMPTS = 3
+DEFAULT_TIMEOUT = 30
+
+# Configuration
+@dataclass
+class AppConfig:
+    database_url: str = os.getenv("DATABASE_URL", "sqlite:///app.db")
+    debug: bool = os.getenv("DEBUG", "false").lower() == "true"
+    secret_key: str = os.getenv("SECRET_KEY", "dev-key")
+```
+
+## File and Directory Naming
+- Use lowercase with underscores for modules and packages
+- Keep names descriptive but concise
+- Avoid using reserved keywords
+- Use plural names for packages containing multiple items
+
+## Documentation
+- Write clear, concise comments for complex logic
+- Avoid obvious comments
+- Update documentation when code changes
+- Include examples in docstrings when helpful
+
+## Git and Version Control
+- Write clear, descriptive commit messages
+- Keep commits atomic and focused
+- Use conventional commit format when possible
+- Include tests in the same commit as the feature
+
+## Environment Management
+- Always use virtual environments
+- Include `requirements.txt` or `pyproject.toml`
+- Document Python version requirements
+- Use `.env` files for local configuration (never commit them)
