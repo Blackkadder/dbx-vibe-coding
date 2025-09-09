@@ -1,0 +1,29 @@
+bundle:
+  name: dbx-vibe-coding
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://dbc-0b3e92b9-73a9.cloud.databricks.com
+      profile: DEFAULT
+    
+  prod:
+    workspace:
+      host: https://dbc-0b3e92b9-73a9.cloud.databricks.com
+      profile: DEFAULT
+
+resources:
+  apps:
+    streamlit-terraform-generator:
+      name: "ihateterraform-app"
+      description: "Convert Databricks jobs to Terraform using AI"
+      source_code_path: ./frontend
+
+variables:
+  sql-warehouse:
+    description: "SQL Warehouse ID for the app"
+    default: ""
