@@ -8,12 +8,12 @@ targets:
   dev:
     default: true
     workspace:
-      host: https://dbc-0b3e92b9-73a9.cloud.databricks.com
+      host: https://dbc-03d3b85e-5163.cloud.databricks.com/
       profile: DEFAULT
     
   prod:
     workspace:
-      host: https://dbc-0b3e92b9-73a9.cloud.databricks.com
+      host: https://dbc-03d3b85e-5163.cloud.databricks.com/
       profile: DEFAULT
 
 resources:
