@@ -93,6 +93,7 @@ class DatabricksJobRetriever:
                 "settings": self._serialize_job_settings(job.settings) if job.settings else {},
                 "cluster_spec": self._extract_cluster_spec(job.settings) if job.settings else {}
             }
+            print(job_details)
             
             self.logger.info(f"Successfully retrieved job details for job_id: {job_id}")
             return job_details
@@ -360,6 +361,9 @@ class TerraformMiddleware:
         self.logger.info("Terraform middleware initialized")
         self.logger.debug(f"Workspace: {workspace_config.workspace_url}")
         self.logger.debug(f"Model API: {model_api_config.endpoint_url}")
+
+    #  self.logger.info("Step 1: Retrieving job details from Databricks workspace")
+    #         job_details = self.job_retriever.get_job_details(job_id)
     
     def process_job_to_terraform(self, job_id: int) -> Dict[str, Any]:
         """
@@ -383,8 +387,7 @@ class TerraformMiddleware:
             self.logger.info(f"Starting job-to-Terraform pipeline for job_id: {job_id}")
             
             # Step 1: Authenticate and retrieve job details from Databricks
-            self.logger.info("Step 1: Retrieving job details from Databricks workspace")
-            job_details = self.job_retriever.get_job_details(job_id)
+           
             
             self.logger.info(f"Retrieved job: '{job_details.get('name', 'Unknown')}' "
                            f"(Created by: {job_details.get('creator_user_name', 'Unknown')})")

@@ -16,12 +16,6 @@ targets:
       host: https://dbc-03d3b85e-5163.cloud.databricks.com/
       profile: DEFAULT
 
-resources:
-  apps:
-    streamlit-terraform-generator:
-      name: "ihateterraform-app"
-      description: "Convert Databricks jobs to Terraform using AI"
-      source_code_path: ./frontend
 
 variables:
   sql-warehouse:
