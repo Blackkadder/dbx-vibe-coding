@@ -10,8 +10,10 @@ import os
 
 # Add the parent directory to the Python path to import from backend
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from middleware import create_middleware_from_config
+from middleware import create_middleware_from_config, DatabricksJobRetriever, WorkspaceConfig
 from config import ConfigManager, AppConfig, get_app_config
+
+my_config = ConfigManager.load_from_env()
 
 # Configure the page
 st.set_page_config(
@@ -20,6 +22,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
 
 # Databricks-inspired UI theme
 st.markdown("""
@@ -374,6 +377,8 @@ def main():
         # no wrapper closing; widgets are standalone in Streamlit
 
     with right:
+        st.write(my_config.workspace_token)
+
         with st.container():
             if st.session_state.is_loading:
                 st.markdown(
@@ -388,26 +393,48 @@ def main():
                     config = get_app_config()
                     print(config)
                     if config:
-                        # Use real middleware to fetch job and generate terraform
-                        result = databricks_job_retriever.get_job_details()
-                           
+                        # Create job retriever for raw output
+                        workspace_config = WorkspaceConfig(
+                            workspace_url=config.workspace_url,
+                            profile=config.workspace_profile,
+                            token=config.workspace_token
+                        )
+                        job_retriever = DatabricksJobRetriever(workspace_config)
                         
-                        if result["success"]:
-                            st.session_state.terraform_output = result["terraform_code"]
-                            st.session_state.job_details = result["job_details"]
-                        else:
-                            st.session_state.error_message = result["error"]
-                            st.session_state.terraform_output = ""
-                            st.session_state.job_details = None
+                        # Get raw job details directly from Databricks
+                        raw_job_details = job_retriever.get_job_details(int(st.session_state.job_id_input))
+                        
+                        # Store raw job details as the result
+                        st.session_state.job_details = raw_job_details
+                        job_name = raw_job_details.get('settings', {}).get('name', 'Unknown')
+                        st.session_state.terraform_output = f"""# Raw Databricks Job Configuration from REST API
+# Job ID: {raw_job_details.get('job_id', 'Unknown')}
+# Job Name: {job_name}
+# Creator: {raw_job_details.get('creator_user_name', 'Unknown')}
+# Created: {raw_job_details.get('created_time', 'Unknown')}
+# API Endpoint: GET /api/2.0/jobs/get
+
+{json.dumps(raw_job_details, indent=2)}"""
                     else:
                         # Fall back to mock data if no configuration
                         st.session_state.terraform_output = generate_mock_terraform(st.session_state.job_id_input)
                         st.session_state.job_details = {
                             "job_id": int(st.session_state.job_id_input),
-                            "name": f"mock-job-{st.session_state.job_id_input}",
                             "creator_user_name": "demo@example.com",
-                            "settings": {"name": f"mock-job-{st.session_state.job_id_input}"},
-                            "cluster_spec": {"num_workers": 2, "spark_version": "11.3.x-scala2.12"}
+                            "created_time": 1625841911296,
+                            "settings": {
+                                "name": f"mock-job-{st.session_state.job_id_input}",
+                                "max_concurrent_runs": 1,
+                                "timeout_seconds": 0,
+                                "notebook_task": {
+                                    "notebook_path": "/Users/demo@example.com/mock-notebook"
+                                },
+                                "new_cluster": {
+                                    "num_workers": 2, 
+                                    "spark_version": "11.3.x-scala2.12",
+                                    "node_type_id": "i3.xlarge"
+                                }
+                            }
                         }
                         
                 except Exception as e:

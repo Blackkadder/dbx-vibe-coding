@@ -18,8 +18,6 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import requests
 import uuid
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.jobs import Job
 
 
 @dataclass
@@ -39,159 +37,98 @@ class ModelAPIConfig:
 
 
 class DatabricksJobRetriever:
-    """Handles Databricks job retrieval using SSO credentials"""
+    """Handles Databricks job retrieval using REST API calls"""
     
     def __init__(self, workspace_config: WorkspaceConfig):
         self.workspace_config = workspace_config
-        self._client: Optional[WorkspaceClient] = None
         self.logger = logging.getLogger(__name__)
-    
-    def _get_client(self) -> WorkspaceClient:
-        """Get authenticated Databricks client"""
-        if self._client is None:
-            try:
-                # Try to use profile-based authentication first (SSO)
-                if self.workspace_config.profile:
-                    self._client = WorkspaceClient(
-                        host=self.workspace_config.workspace_url,
-                        profile=self.workspace_config.profile
-                    )
-                # Fall back to token-based authentication
-                elif self.workspace_config.token:
-                    self._client = WorkspaceClient(
-                        host=self.workspace_config.workspace_url,
-                        token=self.workspace_config.token
-                    )
-                else:
-                    # Use environment variables or default profile
-                    self._client = WorkspaceClient(
-                        host=self.workspace_config.workspace_url
-                    )
-                    
-                # Test the connection
-                self._client.current_user.me()
-                self.logger.info("Successfully authenticated to Databricks workspace")
-                
-            except Exception as e:
-                self.logger.error(f"Failed to authenticate to Databricks: {str(e)}")
-                raise
         
-        return self._client
+        # Set up authentication headers
+        self.headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        
+        # Configure authentication
+        if self.workspace_config.token:
+            self.headers['Authorization'] = f'Bearer {self.workspace_config.token}'
+        elif self.workspace_config.profile:
+            # For profile-based auth, try to get token from environment or CLI config
+            token = self._get_token_from_profile()
+            if token:
+                self.headers['Authorization'] = f'Bearer {token}'
+            else:
+                raise ValueError(f"Could not retrieve token for profile: {self.workspace_config.profile}")
+        else:
+            # Try to get token from environment variables
+            token = os.getenv('DATABRICKS_TOKEN')
+            if token:
+                self.headers['Authorization'] = f'Bearer {token}'
+            else:
+                raise ValueError("No authentication method provided. Need either token or valid profile.")
+    
+    def _get_token_from_profile(self) -> Optional[str]:
+        """Get token from Databricks profile or environment"""
+        
+        # Try general environment variable
+        env_token = os.getenv('DATABRICKS_TOKEN')
+        print('ENV TOKEN', env_token)
+        if env_token:
+            return env_token
+            
+        # TODO: Could try to read from ~/.databrickscfg file here
+        return None
     
     def get_job_details(self, job_id: int) -> Dict[str, Any]:
-        """Retrieve detailed job configuration from Databricks"""
+        """Retrieve detailed job configuration from Databricks REST API"""
         try:
-            client = self._get_client()
-            job = client.jobs.get(job_id=job_id)
+            # Construct the API URL
+            api_url = f"{self.workspace_config.workspace_url.rstrip('/')}/api/2.0/jobs/get"
             
-            # Extract relevant job details
-            job_details = {
-                "job_id": job.job_id,
-                "name": job.settings.name if job.settings else "Unknown",
-                "created_time": job.created_time,
-                "creator_user_name": job.creator_user_name,
-                "settings": self._serialize_job_settings(job.settings) if job.settings else {},
-                "cluster_spec": self._extract_cluster_spec(job.settings) if job.settings else {}
-            }
-            print(job_details)
+            # Make the REST API call
+            self.logger.info(f"Calling Databricks Jobs API: GET {api_url}")
+            response = requests.get(
+                api_url,
+                headers=self.headers,
+                params={'job_id': job_id},
+                timeout=30
+            )
             
+            # Check for HTTP errors
+            response.raise_for_status()
+            
+            # Parse the JSON response
+            job_data = response.json()
+            
+            # Return the raw job data from the API
             self.logger.info(f"Successfully retrieved job details for job_id: {job_id}")
-            return job_details
+            self.logger.info(f"Job name: {job_data.get('settings', {}).get('name', 'Unknown')}")
+            
+            return job_data
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                raise Exception(f"Job {job_id} not found in workspace")
+            elif e.response.status_code == 403:
+                raise Exception(f"Access denied. Check your authentication credentials.")
+            else:
+                raise Exception(f"HTTP {e.response.status_code}: {e.response.text}")
+                
+        except requests.exceptions.ConnectionError:
+            raise Exception(f"Could not connect to Databricks workspace: {self.workspace_config.workspace_url}")
+            
+        except requests.exceptions.Timeout:
+            raise Exception("Request timed out. The Databricks API may be slow to respond.")
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Request failed: {str(e)}")
+            
+        except json.JSONDecodeError:
+            raise Exception("Invalid JSON response from Databricks API")
             
         except Exception as e:
             self.logger.error(f"Failed to retrieve job {job_id}: {str(e)}")
             raise Exception(f"Unable to retrieve job details: {str(e)}")
-    
-    def _serialize_job_settings(self, settings) -> Dict[str, Any]:
-        """Convert job settings to serializable format"""
-        try:
-            # Convert to dictionary, handling complex objects
-            settings_dict = {}
-            
-            # Basic properties
-            if hasattr(settings, 'name'):
-                settings_dict['name'] = settings.name
-            if hasattr(settings, 'description'):
-                settings_dict['description'] = settings.description
-            if hasattr(settings, 'tags'):
-                settings_dict['tags'] = settings.tags
-            if hasattr(settings, 'max_concurrent_runs'):
-                settings_dict['max_concurrent_runs'] = settings.max_concurrent_runs
-            if hasattr(settings, 'timeout_seconds'):
-                settings_dict['timeout_seconds'] = settings.timeout_seconds
-                
-            # Task configuration
-            if hasattr(settings, 'tasks') and settings.tasks:
-                settings_dict['tasks'] = []
-                for task in settings.tasks:
-                    task_dict = {
-                        'task_key': getattr(task, 'task_key', ''),
-                        'description': getattr(task, 'description', ''),
-                        'depends_on': getattr(task, 'depends_on', []),
-                    }
-                    
-                    # Add task type specific details
-                    if hasattr(task, 'notebook_task') and task.notebook_task:
-                        task_dict['type'] = 'notebook'
-                        task_dict['notebook_path'] = task.notebook_task.notebook_path
-                        task_dict['base_parameters'] = getattr(task.notebook_task, 'base_parameters', {})
-                    elif hasattr(task, 'spark_python_task') and task.spark_python_task:
-                        task_dict['type'] = 'spark_python'
-                        task_dict['python_file'] = task.spark_python_task.python_file
-                        task_dict['parameters'] = getattr(task.spark_python_task, 'parameters', [])
-                    elif hasattr(task, 'python_wheel_task') and task.python_wheel_task:
-                        task_dict['type'] = 'python_wheel'
-                        task_dict['package_name'] = task.python_wheel_task.package_name
-                        task_dict['entry_point'] = task.python_wheel_task.entry_point
-                    
-                    settings_dict['tasks'].append(task_dict)
-            
-            # Schedule information
-            if hasattr(settings, 'schedule') and settings.schedule:
-                settings_dict['schedule'] = {
-                    'quartz_cron_expression': getattr(settings.schedule, 'quartz_cron_expression', ''),
-                    'timezone_id': getattr(settings.schedule, 'timezone_id', 'UTC')
-                }
-            
-            return settings_dict
-            
-        except Exception as e:
-            self.logger.warning(f"Failed to serialize job settings: {str(e)}")
-            return {"error": "Failed to serialize job settings"}
-    
-    def _extract_cluster_spec(self, settings) -> Dict[str, Any]:
-        """Extract cluster specification from job settings"""
-        cluster_spec = {}
-        
-        try:
-            # Check for job cluster
-            if hasattr(settings, 'job_clusters') and settings.job_clusters:
-                job_cluster = settings.job_clusters[0]  # Take first cluster
-                if hasattr(job_cluster, 'new_cluster'):
-                    cluster = job_cluster.new_cluster
-                    cluster_spec = {
-                        'cluster_name': getattr(job_cluster, 'job_cluster_key', ''),
-                        'node_type_id': getattr(cluster, 'node_type_id', ''),
-                        'driver_node_type_id': getattr(cluster, 'driver_node_type_id', ''),
-                        'num_workers': getattr(cluster, 'num_workers', 0),
-                        'spark_version': getattr(cluster, 'spark_version', ''),
-                        'spark_conf': getattr(cluster, 'spark_conf', {}),
-                        'aws_attributes': getattr(cluster, 'aws_attributes', {}),
-                        'custom_tags': getattr(cluster, 'custom_tags', {})
-                    }
-            
-            # Check for existing cluster ID
-            elif hasattr(settings, 'existing_cluster_id'):
-                cluster_spec = {
-                    'existing_cluster_id': settings.existing_cluster_id,
-                    'type': 'existing'
-                }
-            
-            return cluster_spec
-            
-        except Exception as e:
-            self.logger.warning(f"Failed to extract cluster spec: {str(e)}")
-            return {"error": "Failed to extract cluster specification"}
 
 
 class ModelAPIClient:
@@ -387,10 +324,12 @@ class TerraformMiddleware:
             self.logger.info(f"Starting job-to-Terraform pipeline for job_id: {job_id}")
             
             # Step 1: Authenticate and retrieve job details from Databricks
-           
+            self.logger.info("Step 1: Retrieving job details from Databricks workspace")
+            job_details = self.job_retriever.get_job_details(job_id)
             
-            self.logger.info(f"Retrieved job: '{job_details.get('name', 'Unknown')}' "
-                           f"(Created by: {job_details.get('creator_user_name', 'Unknown')})")
+            job_name = job_details.get('settings', {}).get('name', 'Unknown')
+            creator = job_details.get('creator_user_name', 'Unknown')
+            self.logger.info(f"Retrieved job: '{job_name}' (Created by: {creator})")
             
             # Step 2: Send job details to external model API for Terraform generation  
             self.logger.info("Step 2: Requesting Terraform generation from model API")
@@ -410,7 +349,7 @@ class TerraformMiddleware:
                     "request_start_time": request_start_time,
                     "request_end_time": self._get_timestamp(),
                     "terraform_length": len(terraform_code),
-                    "job_name": job_details.get('name', 'Unknown')
+                    "job_name": job_details.get('settings', {}).get('name', 'Unknown')
                 }
             }
             
@@ -447,12 +386,19 @@ class TerraformMiddleware:
             "timestamp": self._get_timestamp()
         }
         
-        # Test Databricks authentication
+        # Test Databricks authentication by making a simple API call
         try:
-            client = self.job_retriever._get_client()
-            user = client.current_user.me()
+            # Try to list jobs (lightweight API call to test auth)
+            api_url = f"{self.job_retriever.workspace_config.workspace_url.rstrip('/')}/api/2.0/jobs/list"
+            response = requests.get(
+                api_url,
+                headers=self.job_retriever.headers,
+                params={'limit': 1},
+                timeout=10
+            )
+            response.raise_for_status()
             health_status["databricks_auth"] = "healthy"
-            health_status["databricks_user"] = user.user_name
+            health_status["databricks_workspace"] = self.job_retriever.workspace_config.workspace_url
         except Exception as e:
             health_status["databricks_auth"] = "unhealthy"
             health_status["databricks_error"] = str(e)
