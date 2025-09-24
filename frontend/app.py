@@ -12,6 +12,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from middleware import create_middleware_from_config, DatabricksJobRetriever, WorkspaceConfig
 from config import ConfigManager, AppConfig, get_app_config
+from databricks_job_terraform_translate import DatabricksJobToTerraformAgent
 
 my_config = ConfigManager.load_from_env()
 
@@ -156,6 +157,10 @@ if 'open_tf_tab_next' not in st.session_state:
     st.session_state.open_tf_tab_next = False
 if 'error_message' not in st.session_state:
     st.session_state.error_message = None
+if 'generated_terraform' not in st.session_state:
+    st.session_state.generated_terraform = ""
+if 'terraform_generation_loading' not in st.session_state:
+    st.session_state.terraform_generation_loading = False
 
 def generate_terraform_from_databricks(job_id: str, config: AppConfig) -> Dict[str, Any]:
     """Generate terraform using the real middleware pipeline"""
@@ -232,6 +237,32 @@ def generate_terraform_variables(job_id: str, config: AppConfig) -> str:
         # Store error for display
         st.session_state.error_message = result["error"]
         raise Exception(result["error"])
+
+
+def generate_terraform_config_from_job_data(job_data: Dict[str, Any]) -> str:
+    """Generate terraform configuration from raw job data using local agent"""
+    if not job_data:
+        return "# No job data available to generate Terraform configuration"
+    
+    try:
+        # Initialize the local terraform agent
+        terraform_agent = DatabricksJobToTerraformAgent()
+        
+        # Use the job settings for conversion, fallback to full job data if needed
+        job_settings = job_data.get('settings', job_data)
+        
+        # Convert to JSON string and then to terraform
+        job_json = json.dumps(job_settings)
+        terraform_config = terraform_agent.convert_json_to_terraform(job_json)
+        
+        return terraform_config
+        
+    except Exception as e:
+        return f"""# Error generating Terraform configuration
+# Error: {str(e)}
+# 
+# Raw job data (for manual conversion):
+{json.dumps(job_data, indent=2)}"""
 
 
 def show_configuration_help():
@@ -368,6 +399,8 @@ def main():
             st.session_state.terraform_output = ""
             st.session_state.job_details = None
             st.session_state.error_message = None
+            st.session_state.generated_terraform = ""
+            st.session_state.terraform_generation_loading = False
             st.session_state.is_loading = True
             st.session_state.job_completed = False
             # on next render after fetch completes, focus Terraform Variables tab
@@ -377,7 +410,6 @@ def main():
         # no wrapper closing; widgets are standalone in Streamlit
 
     with right:
-        st.write(my_config.workspace_token)
 
         with st.container():
             if st.session_state.is_loading:
@@ -457,9 +489,9 @@ def main():
                 )
                 
             elif st.session_state.job_completed and st.session_state.terraform_output:
-                tab_labels = ["Overview", "Terraform Variables", "Raw JSON"]
+                tab_labels = ["Raw JSON", "Overview", "Terraform Variables"]
                 if st.session_state.get("open_tf_tab_next", False):
-                    tab_labels = ["Terraform Variables", "Overview", "Raw JSON"]
+                    tab_labels = ["Raw JSON", "Terraform Variables", "Overview"]
                     st.session_state.open_tf_tab_next = False
                 tabs = st.tabs(tab_labels)
                 tab_map = {label: tab for label, tab in zip(tab_labels, tabs)}
@@ -472,17 +504,57 @@ def main():
                         unsafe_allow_html=True,
                     )
                 with tab_map["Terraform Variables"]:
+                    # Button to generate terraform configuration
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        terraform_button_disabled = not st.session_state.job_details or st.session_state.terraform_generation_loading
+                        
+                        if st.button(
+                            "Create terraform config", 
+                            key="generate_terraform", 
+                            disabled=terraform_button_disabled,
+                            use_container_width=True
+                        ):
+                            st.session_state.terraform_generation_loading = True
+                            st.rerun()
+                    
+                    # Show loading state for terraform generation
+                    if st.session_state.terraform_generation_loading:
+                        st.markdown(
+                            """
+                            <div style="text-align: center; color: #00ff00; margin: 1rem 0;">
+                                🔧 Generating Terraform configuration...<br/>
+                                <small>Converting Databricks job to HCL format</small>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        
+                        # Generate terraform configuration
+                        try:
+                            terraform_config = generate_terraform_config_from_job_data(st.session_state.job_details)
+                            st.session_state.generated_terraform = terraform_config
+                        except Exception as e:
+                            st.session_state.generated_terraform = f"# Error generating Terraform: {str(e)}"
+                        
+                        st.session_state.terraform_generation_loading = False
+                        st.rerun()
+                    
+                    # Display terraform configuration (generated or original)
+                    display_content = st.session_state.generated_terraform or st.session_state.terraform_output
+                    
                     st.markdown(
                         f"""
-<div class=\"output-container\">\n  <div style=\"display:flex; justify-content:flex-end;\">\n    <button id=\"copyBtn\" class=\"chip\" onclick=\"navigator.clipboard.writeText(document.getElementById('tfBlock').innerText)\">Copy</button>\n  </div>\n  <div id=\"tfBlock\" class=\"terraform-output\">{st.session_state.terraform_output}</div>\n</div>
+<div class=\"output-container\">\n  <div style=\"display:flex; justify-content:flex-end;\">\n    <button id=\"copyBtn\" class=\"chip\" onclick=\"navigator.clipboard.writeText(document.getElementById('tfBlock').innerText)\">Copy</button>\n  </div>\n  <div id=\"tfBlock\" class=\"terraform-output\">{display_content}</div>\n</div>
                         """,
                         unsafe_allow_html=True,
                     )
                     dl_cols = st.columns([1,1,6])
                     with dl_cols[0]:
+                        download_content = st.session_state.generated_terraform or st.session_state.terraform_output
                         st.download_button(
                             label="Download .tf",
-                            data=st.session_state.terraform_output,
+                            data=download_content,
                             file_name=f"terraform_job_{st.session_state.job_id_input}.tf",
                             mime="text/plain",
                             key="download_tf",
@@ -507,6 +579,7 @@ def main():
                         )
                 with tab_map["Raw JSON"]:
                     if st.session_state.job_details:
+                        
                         st.json(st.session_state.job_details)
                     else:
                         st.json({
