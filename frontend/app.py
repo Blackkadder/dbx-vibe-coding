@@ -12,7 +12,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from middleware import create_middleware_from_config, DatabricksJobRetriever, WorkspaceConfig
 from config import ConfigManager, AppConfig, get_app_config
-from databricks_job_terraform_translate import DatabricksJobToTerraformAgent
+from model_serving import score_model
 
 my_config = ConfigManager.load_from_env()
 
@@ -240,25 +240,31 @@ def generate_terraform_variables(job_id: str, config: AppConfig) -> str:
 
 
 def generate_terraform_config_from_job_data(job_data: Dict[str, Any]) -> str:
-    """Generate terraform configuration from raw job data using local agent"""
+    """Generate terraform configuration from raw job data using model serving API"""
     if not job_data:
         return "# No job data available to generate Terraform configuration"
     
     try:
-        # Initialize the local terraform agent
-        terraform_agent = DatabricksJobToTerraformAgent()
+        # Prepare job data for model serving API
+        # Convert job data to DataFrame format expected by the model
+        job_json_str = json.dumps(job_data['settings'])
+        # print("Job JSON string:", job_json_str)
         
-        # Use the job settings for conversion, fallback to full job data if needed
-        job_settings = job_data.get('settings', job_data)
+        # Create DataFrame with the job data as input
+        df = pd.DataFrame({
+            'job_json': [job_json_str]
+        })
         
-        # Convert to JSON string and then to terraform
-        job_json = json.dumps(job_settings)
-        terraform_config = terraform_agent.convert_json_to_terraform(job_json)
+        # Call the model serving API
+        result = score_model(df)
+        print("Result:", result)
         
+        terraform_config = str(result['predictions'])
+             
         return terraform_config
         
     except Exception as e:
-        return f"""# Error generating Terraform configuration
+        return f"""# Error generating Terraform configuration from API
 # Error: {str(e)}
 # 
 # Raw job data (for manual conversion):
@@ -423,7 +429,6 @@ def main():
                 try:
                     # Get configuration
                     config = get_app_config()
-                    print(config)
                     if config:
                         # Create job retriever for raw output
                         workspace_config = WorkspaceConfig(
@@ -489,20 +494,14 @@ def main():
                 )
                 
             elif st.session_state.job_completed and st.session_state.terraform_output:
-                tab_labels = ["Raw JSON", "Overview", "Terraform Variables"]
+                tab_labels = ["Raw JSON", "Terraform Variables"]
                 if st.session_state.get("open_tf_tab_next", False):
-                    tab_labels = ["Raw JSON", "Terraform Variables", "Overview"]
+                    tab_labels = ["Raw JSON", "Terraform Variables"]
                     st.session_state.open_tf_tab_next = False
                 tabs = st.tabs(tab_labels)
                 tab_map = {label: tab for label, tab in zip(tab_labels, tabs)}
 
-                with tab_map["Overview"]:
-                    st.markdown(
-                        f"""
-<div class=\"output-container\">\n  <div class=\"terraform-output\" style=\"border-left-color:#374151;\">\n$ databricks jobs get --job-id {st.session_state.job_id_input}\nFetching job info...\n\n✔ Job retrieved successfully\n  </div>\n</div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+
                 with tab_map["Terraform Variables"]:
                     # Button to generate terraform configuration
                     col1, col2 = st.columns([1, 3])
@@ -523,31 +522,26 @@ def main():
                         st.markdown(
                             """
                             <div style="text-align: center; color: #00ff00; margin: 1rem 0;">
-                                🔧 Generating Terraform configuration...<br/>
-                                <small>Converting Databricks job to HCL format</small>
+                                🚀 Calling model serving API...<br/>
+                                <small>Sending job data to Terraform generation endpoint</small>
                             </div>
                             """,
                             unsafe_allow_html=True,
                         )
                         
                         # Generate terraform configuration
-                        try:
-                            terraform_config = generate_terraform_config_from_job_data(st.session_state.job_details)
-                            st.session_state.generated_terraform = terraform_config
-                        except Exception as e:
-                            st.session_state.generated_terraform = f"# Error generating Terraform: {str(e)}"
+                        terraform_config = generate_terraform_config_from_job_data(st.session_state.job_details)
+                        st.session_state.generated_terraform = terraform_config
                         
                         st.session_state.terraform_generation_loading = False
                         st.rerun()
                     
                     # Display terraform configuration (generated or original)
-                    display_content = st.session_state.generated_terraform or st.session_state.terraform_output
+                    display_content = st.session_state.generated_terraform
                     
-                    st.markdown(
-                        f"""
-<div class=\"output-container\">\n  <div style=\"display:flex; justify-content:flex-end;\">\n    <button id=\"copyBtn\" class=\"chip\" onclick=\"navigator.clipboard.writeText(document.getElementById('tfBlock').innerText)\">Copy</button>\n  </div>\n  <div id=\"tfBlock\" class=\"terraform-output\">{display_content}</div>\n</div>
-                        """,
-                        unsafe_allow_html=True,
+                    st.code(
+                        display_content,
+                        language='hcl'
                     )
                     dl_cols = st.columns([1,1,6])
                     with dl_cols[0]:
