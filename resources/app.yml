@@ -1,6 +1,6 @@
 resources:
   apps:
-    streamlit-terraform-generator:
-      name: "ihateterraform-app-v2"
-      description: "Convert Databricks jobs to Terraform using AI"
+    terraform-hater:
+      name: "terraform-hater"
+      description: "Convert Databricks jobs to Terraform using AI - I hate Terraform!"
       source_code_path: ../frontend

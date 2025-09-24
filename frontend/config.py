@@ -34,7 +34,7 @@ class ConfigManager:
     @staticmethod
     def load_from_env() -> AppConfig:
         """Load configuration from environment variables"""
-        workspace_url = os.getenv('DATABRICKS_WORKSPACE_URL', '')
+        workspace_url = 'https://'+os.getenv('DATABRICKS_HOST', '')
         print(workspace_url)
         
         if not workspace_url:

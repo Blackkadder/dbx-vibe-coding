@@ -440,7 +440,7 @@ def create_middleware_from_config(
 def create_middleware_from_env() -> TerraformMiddleware:
     """Create middleware using environment variables"""
     
-    workspace_url = os.getenv('DATABRICKS_WORKSPACE_URL')
+    workspace_url = os.getenv('DATABRICKS_HOST')
     if not workspace_url:
         raise ValueError("DATABRICKS_WORKSPACE_URL environment variable is required")
     
