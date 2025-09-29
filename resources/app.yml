@@ -1,0 +1,6 @@
+resources:
+  apps:
+    terraform-hater:
+      name: "terraform-hater"
+      description: "Convert Databricks jobs to Terraform using AI - I hate Terraform!"
+      source_code_path: ../frontend

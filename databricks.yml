@@ -1,0 +1,23 @@
+bundle:
+  name: terraform-hater
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://dbc-03d3b85e-5163.cloud.databricks.com/
+      profile: DEFAULT
+    
+  prod:
+    workspace:
+      host: https://dbc-03d3b85e-5163.cloud.databricks.com/
+      profile: DEFAULT
+
+
+variables:
+  sql-warehouse:
+    description: "SQL Warehouse ID for the app"
+    default: ""

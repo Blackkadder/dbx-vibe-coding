@@ -6,6 +6,10 @@ import os
 import streamlit as st
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # 🎯 Static Model API Endpoint - Update this to your actual endpoint URL
 DEFAULT_MODEL_API_ENDPOINT = "https://your-terraform-model-api.herokuapp.com/generate-terraform"
@@ -30,7 +34,8 @@ class ConfigManager:
     @staticmethod
     def load_from_env() -> AppConfig:
         """Load configuration from environment variables"""
-        workspace_url = os.getenv('DATABRICKS_WORKSPACE_URL', '')
+        workspace_url = 'https://'+os.getenv('DATABRICKS_HOST', '')
+        print(workspace_url)
         
         if not workspace_url:
             raise ValueError("DATABRICKS_WORKSPACE_URL environment variable is required")
@@ -45,32 +50,7 @@ class ConfigManager:
             # model_api_endpoint automatically uses DEFAULT_MODEL_API_ENDPOINT
         )
     
-    @staticmethod
-    def load_from_streamlit() -> AppConfig:
-        """Load configuration from Streamlit secrets and session state"""
-        try:
-            # Try to load from Streamlit secrets first
-            workspace_url = st.secrets.get("DATABRICKS_WORKSPACE_URL", "")
-            workspace_profile = st.secrets.get("DATABRICKS_PROFILE", "")
-            workspace_token = st.secrets.get("DATABRICKS_TOKEN", "")
-            model_api_key = st.secrets.get("MODEL_API_KEY", "")
-            
-        except Exception:
-            # Fall back to environment variables
-            workspace_url = os.getenv('DATABRICKS_WORKSPACE_URL', '')
-            workspace_profile = os.getenv('DATABRICKS_PROFILE')
-            workspace_token = os.getenv('DATABRICKS_TOKEN')
-            model_api_key = os.getenv('MODEL_API_KEY')
-        
-        # ✨ No need to get model endpoint - it's static!
-        return AppConfig(
-            workspace_url=workspace_url,
-            workspace_profile=workspace_profile,
-            workspace_token=workspace_token,
-            model_api_key=model_api_key,
-            debug_mode=os.getenv('DEBUG_MODE', 'false').lower() == 'true'
-            # model_api_endpoint automatically uses DEFAULT_MODEL_API_ENDPOINT
-        )
+   
     
     @staticmethod
     def create_user_input_config() -> Optional[AppConfig]:
@@ -144,19 +124,20 @@ class ConfigManager:
 def get_app_config() -> Optional[AppConfig]:
     """Get application configuration from the best available source"""
     
-    # Try Streamlit-based configuration first
-    try:
-        config = ConfigManager.load_from_streamlit()
-        if config.workspace_url:  # ✨ Only need workspace URL now!
-            return config
-    except Exception:
-        pass
+    # Try environment variables first
     
-    # Try environment variables
-    try:
-        return ConfigManager.load_from_env()
-    except Exception:
-        pass
+    config = ConfigManager.load_from_env()
+    if config.workspace_url:
+        return config
+   
+    
+    # Fall back to Streamlit-based configuration
+    # try:
+    #     config = ConfigManager.load_from_streamlit()
+    #     if config.workspace_url:
+    #         return config
+    # except Exception:
+    #     pass
     
     # Return None if no configuration is available
     return None

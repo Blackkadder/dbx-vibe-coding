@@ -10,8 +10,11 @@ import os
 
 # Add the parent directory to the Python path to import from backend
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from backend.middleware import create_middleware_from_config
-from backend.config import ConfigManager, AppConfig, get_app_config
+from middleware import create_middleware_from_config, DatabricksJobRetriever, WorkspaceConfig
+from config import ConfigManager, AppConfig, get_app_config
+from model_serving import score_model
+
+my_config = ConfigManager.load_from_env()
 
 # Configure the page
 st.set_page_config(
@@ -20,6 +23,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
 
 # Databricks-inspired UI theme
 st.markdown("""
@@ -143,12 +147,20 @@ st.markdown("""
 # Initialize session state
 if 'terraform_output' not in st.session_state:
     st.session_state.terraform_output = ""
+if 'job_details' not in st.session_state:
+    st.session_state.job_details = None
 if 'is_loading' not in st.session_state:
     st.session_state.is_loading = False
 if 'job_completed' not in st.session_state:
     st.session_state.job_completed = False
 if 'open_tf_tab_next' not in st.session_state:
     st.session_state.open_tf_tab_next = False
+if 'error_message' not in st.session_state:
+    st.session_state.error_message = None
+if 'generated_terraform' not in st.session_state:
+    st.session_state.generated_terraform = ""
+if 'terraform_generation_loading' not in st.session_state:
+    st.session_state.terraform_generation_loading = False
 
 def generate_terraform_from_databricks(job_id: str, config: AppConfig) -> Dict[str, Any]:
     """Generate terraform using the real middleware pipeline"""
@@ -225,6 +237,38 @@ def generate_terraform_variables(job_id: str, config: AppConfig) -> str:
         # Store error for display
         st.session_state.error_message = result["error"]
         raise Exception(result["error"])
+
+
+def generate_terraform_config_from_job_data(job_data: Dict[str, Any]) -> str:
+    """Generate terraform configuration from raw job data using model serving API"""
+    if not job_data:
+        return "# No job data available to generate Terraform configuration"
+    
+    try:
+        # Prepare job data for model serving API
+        # Convert job data to DataFrame format expected by the model
+        job_json_str = json.dumps(job_data['settings'])
+        # print("Job JSON string:", job_json_str)
+        
+        # Create DataFrame with the job data as input
+        df = pd.DataFrame({
+            'job_json': [job_json_str]
+        })
+        
+        # Call the model serving API
+        result = score_model(df)
+        print("Result:", result)
+        
+        terraform_config = str(result['predictions'])
+             
+        return terraform_config
+        
+    except Exception as e:
+        return f"""# Error generating Terraform configuration from API
+# Error: {str(e)}
+# 
+# Raw job data (for manual conversion):
+{json.dumps(job_data, indent=2)}"""
 
 
 def show_configuration_help():
@@ -327,12 +371,14 @@ def main():
         st.markdown('<div class="section-title">Inputs</div>', unsafe_allow_html=True)
         workspace = st.text_input(
             "Workspace ID",
+            value="2568832015773084",
             placeholder="Enter workspace ID (numbers only)...",
             key="workspace_id_input",
             label_visibility="visible",
         )
         job_id = st.text_input(
             "Job ID",
+            value="260113818518456",
             placeholder="Enter job ID...",
             key="job_id_input",
             label_visibility="visible",
@@ -357,6 +403,10 @@ def main():
         )
         if fetch_clicked:
             st.session_state.terraform_output = ""
+            st.session_state.job_details = None
+            st.session_state.error_message = None
+            st.session_state.generated_terraform = ""
+            st.session_state.terraform_generation_loading = False
             st.session_state.is_loading = True
             st.session_state.job_completed = False
             # on next render after fetch completes, focus Terraform Variables tab
@@ -366,6 +416,7 @@ def main():
         # no wrapper closing; widgets are standalone in Streamlit
 
     with right:
+
         with st.container():
             if st.session_state.is_loading:
                 st.markdown(
@@ -374,54 +425,144 @@ def main():
                     """,
                     unsafe_allow_html=True,
                 )
+                
+                try:
+                    # Get configuration
+                    config = get_app_config()
+                    if config:
+                        # Create job retriever for raw output
+                        workspace_config = WorkspaceConfig(
+                            workspace_url=config.workspace_url,
+                            profile=config.workspace_profile,
+                            token=config.workspace_token
+                        )
+                        job_retriever = DatabricksJobRetriever(workspace_config)
+                        
+                        # Get raw job details directly from Databricks
+                        raw_job_details = job_retriever.get_job_details(int(st.session_state.job_id_input))
+                        
+                        # Store raw job details as the result
+                        st.session_state.job_details = raw_job_details
+                        job_name = raw_job_details.get('settings', {}).get('name', 'Unknown')
+                        st.session_state.terraform_output = f"""# Raw Databricks Job Configuration from REST API
+# Job ID: {raw_job_details.get('job_id', 'Unknown')}
+# Job Name: {job_name}
+# Creator: {raw_job_details.get('creator_user_name', 'Unknown')}
+# Created: {raw_job_details.get('created_time', 'Unknown')}
+# API Endpoint: GET /api/2.0/jobs/get
 
-                # Generate terraform variables (simulate)
-                terraform_output = generate_terraform_variables(
-                    st.session_state.job_id_input
-                )
-                st.session_state.terraform_output = terraform_output
+{json.dumps(raw_job_details, indent=2)}"""
+                    else:
+                        # Fall back to mock data if no configuration
+                        st.session_state.terraform_output = generate_mock_terraform(st.session_state.job_id_input)
+                        st.session_state.job_details = {
+                            "job_id": int(st.session_state.job_id_input),
+                            "creator_user_name": "demo@example.com",
+                            "created_time": 1625841911296,
+                            "settings": {
+                                "name": f"mock-job-{st.session_state.job_id_input}",
+                                "max_concurrent_runs": 1,
+                                "timeout_seconds": 0,
+                                "notebook_task": {
+                                    "notebook_path": "/Users/demo@example.com/mock-notebook"
+                                },
+                                "new_cluster": {
+                                    "num_workers": 2, 
+                                    "spark_version": "11.3.x-scala2.12",
+                                    "node_type_id": "i3.xlarge"
+                                }
+                            }
+                        }
+                        
+                except Exception as e:
+                    st.session_state.error_message = str(e)
+                    st.session_state.terraform_output = ""
+                    st.session_state.job_details = None
+                
                 st.session_state.is_loading = False
                 st.session_state.job_completed = True
                 st.rerun()
 
+            elif st.session_state.error_message:
+                st.error(f"Error fetching job: {st.session_state.error_message}")
+                st.markdown('<div class="section-title">Outputs</div>', unsafe_allow_html=True)
+                st.markdown(
+                    """
+<div class=\"output-container\"><div style=\"color:#ef4444;\">Failed to fetch job. Please check your configuration and try again.</div></div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                
             elif st.session_state.job_completed and st.session_state.terraform_output:
-                tab_labels = ["Overview", "Terraform Variables", "Raw JSON"]
+                tab_labels = ["Raw JSON", "Terraform Variables"]
                 if st.session_state.get("open_tf_tab_next", False):
-                    tab_labels = ["Terraform Variables", "Overview", "Raw JSON"]
+                    tab_labels = ["Raw JSON", "Terraform Variables"]
                     st.session_state.open_tf_tab_next = False
                 tabs = st.tabs(tab_labels)
                 tab_map = {label: tab for label, tab in zip(tab_labels, tabs)}
 
-                with tab_map["Overview"]:
-                    st.markdown(
-                        f"""
-<div class=\"output-container\">\n  <div class=\"terraform-output\" style=\"border-left-color:#374151;\">\n$ databricks jobs get --job-id {st.session_state.job_id_input}\nFetching job info...\n\n✔ Job retrieved successfully\n  </div>\n</div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+
                 with tab_map["Terraform Variables"]:
-                    st.markdown(
-                        f"""
-<div class=\"output-container\">\n  <div style=\"display:flex; justify-content:flex-end;\">\n    <button id=\"copyBtn\" class=\"chip\" onclick=\"navigator.clipboard.writeText(document.getElementById('tfBlock').innerText)\">Copy</button>\n  </div>\n  <div id=\"tfBlock\" class=\"terraform-output\">{st.session_state.terraform_output}</div>\n</div>
-                        """,
-                        unsafe_allow_html=True,
+                    # Button to generate terraform configuration
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        terraform_button_disabled = not st.session_state.job_details or st.session_state.terraform_generation_loading
+                        
+                        if st.button(
+                            "Create terraform config", 
+                            key="generate_terraform", 
+                            disabled=terraform_button_disabled,
+                            use_container_width=True
+                        ):
+                            st.session_state.terraform_generation_loading = True
+                            st.rerun()
+                    
+                    # Show loading state for terraform generation
+                    if st.session_state.terraform_generation_loading:
+                        st.markdown(
+                            """
+                            <div style="text-align: center; color: #00ff00; margin: 1rem 0;">
+                                🚀 Calling model serving API...<br/>
+                                <small>Sending job data to Terraform generation endpoint</small>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                        
+                        # Generate terraform configuration
+                        terraform_config = generate_terraform_config_from_job_data(st.session_state.job_details)
+                        st.session_state.generated_terraform = terraform_config
+                        
+                        st.session_state.terraform_generation_loading = False
+                        st.rerun()
+                    
+                    # Display terraform configuration (generated or original)
+                    display_content = st.session_state.generated_terraform
+                    
+                    st.code(
+                        display_content,
+                        language='hcl'
                     )
                     dl_cols = st.columns([1,1,6])
                     with dl_cols[0]:
+                        download_content = st.session_state.generated_terraform or st.session_state.terraform_output
                         st.download_button(
                             label="Download .tf",
-                            data=st.session_state.terraform_output,
+                            data=download_content,
                             file_name=f"terraform_job_{st.session_state.job_id_input}.tf",
                             mime="text/plain",
                             key="download_tf",
                             use_container_width=True,
                         )
                     with dl_cols[1]:
-                        json_payload = {
-                            "job_id": st.session_state.job_id_input,
-                            "generated_on": time.strftime('%Y-%m-%d %H:%M:%S'),
-                            "workspace": st.session_state.get("workspace_id_input", ""),
-                        }
+                        if st.session_state.job_details:
+                            json_payload = st.session_state.job_details
+                        else:
+                            json_payload = {
+                                "job_id": st.session_state.job_id_input,
+                                "generated_on": time.strftime('%Y-%m-%d %H:%M:%S'),
+                                "workspace": st.session_state.get("workspace_id_input", ""),
+                            }
                         st.download_button(
                             label="Download JSON",
                             data=json.dumps(json_payload, indent=2),
@@ -431,11 +572,16 @@ def main():
                             use_container_width=True,
                         )
                 with tab_map["Raw JSON"]:
-                    st.json({
-                        "job_id": st.session_state.job_id_input,
-                        "workspace": st.session_state.get("workspace_id_input", ""),
-                        "status": "retrieved",
-                    })
+                    if st.session_state.job_details:
+                        
+                        st.json(st.session_state.job_details)
+                    else:
+                        st.json({
+                            "job_id": st.session_state.job_id_input,
+                            "workspace": st.session_state.get("workspace_id_input", ""),
+                            "status": "retrieved",
+                            "note": "Job details not available"
+                        })
             else:
                 st.markdown('<div class="section-title">Outputs</div>', unsafe_allow_html=True)
                 st.markdown(
